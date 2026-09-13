@@ -103,11 +103,45 @@ GROUP BY id_usuario_propietario, fecha_inicio::DATE;
 CREATE OR REPLACE FUNCTION evitar_ciclo_categorias()
 RETURNS TRIGGER AS $$
 BEGIN
+    -- Una categoría no puede ser padre de sí misma
     IF NEW.id_categoria_padre = NEW.id_categoria THEN
-        RAISE EXCEPTION 'Una categoría no puede ser padre de sí misma.';
+        RAISE EXCEPTION
+            'Una categoría no puede ser padre de sí misma.';
     END IF;
-    -- Aquí se podría añadir una consulta recursiva para validar ancestros, 
-    -- pero para Postgres 14 es altamente eficiente usar el camino (path) o este chequeo simple.
+
+    -- Si no tiene categoría padre, no puede existir un ciclo
+    IF NEW.id_categoria_padre IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    -- Recorrer todos los ancestros de la categoría padre.
+    -- Si entre ellos aparece la categoría que estamos modificando,
+    -- se produciría un ciclo.
+    IF EXISTS (
+        WITH RECURSIVE ancestros AS (
+            SELECT
+                c.id_categoria,
+                c.id_categoria_padre
+            FROM prototipo.categorias c
+            WHERE c.id_categoria = NEW.id_categoria_padre
+
+            UNION
+
+            SELECT
+                c.id_categoria,
+                c.id_categoria_padre
+            FROM prototipo.categorias c
+            INNER JOIN ancestros a
+                ON c.id_categoria = a.id_categoria_padre
+        )
+        SELECT 1
+        FROM ancestros
+        WHERE id_categoria = NEW.id_categoria
+    ) THEN
+        RAISE EXCEPTION
+            'La operación generaría un ciclo en la jerarquía de categorías.';
+    END IF;
+
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
