@@ -905,6 +905,12 @@ class AppAgenda(ctk.CTk):
             command=self.mostrar_ranking_ubicaciones
         ).pack(fill="x", padx=10, pady=(20, 5))
 
+        ctk.CTkButton(
+            form,
+            text="🗓️ Ver eventos de la ubicación",
+            command=self.mostrar_eventos_ubicacion
+        ).pack(fill="x", padx=10, pady=5)
+
     def ubicacion_seleccionada_id(self):
         sel = self.tree_ubicaciones.selection()
 
@@ -1155,6 +1161,94 @@ class AppAgenda(ctk.CTk):
             messagebox.showerror(
                 "Error",
                 str(e)
+            )
+
+    def mostrar_eventos_ubicacion(self):
+        id_ubicacion = self.ubicacion_seleccionada_id()
+        if not id_ubicacion:
+            messagebox.showwarning(
+                "Ubicación",
+                "Seleccione una ubicación primero."
+            )
+            return
+
+        try:
+            conn=self.obtener_conexion()
+            cur=conn.cursor()
+
+            cur.execute("""
+                SELECT
+                    id_evento,
+                    titulo,
+                    fecha_inicio,
+                    fecha_fin,
+                    CASE
+                        WHEN fecha_fin < CURRENT_TIMESTAMP THEN 'Finalizado'
+                        WHEN fecha_inicio <= CURRENT_TIMESTAMP
+                             AND fecha_fin >= CURRENT_TIMESTAMP THEN 'En curso'
+                        ELSE 'Próximo'
+                    END AS estado
+                FROM eventos
+                WHERE id_ubicacion=%s
+                ORDER BY fecha_inicio DESC;
+            """, (id_ubicacion,))
+
+            eventos=cur.fetchall()
+
+            cur.execute("""
+                SELECT nombre
+                FROM ubicaciones
+                WHERE id_ubicacion=%s;
+            """, (id_ubicacion,))
+
+            nombre_ubicacion=cur.fetchone()[0]
+
+            cur.close()
+            conn.close()
+
+            ventana=ctk.CTkToplevel(self)
+            ventana.title(f"Eventos de {nombre_ubicacion}")
+            ventana.geometry("900x450")
+            ventana.transient(self)
+            ventana.grab_set()
+
+            titulo=ctk.CTkLabel(
+                ventana,
+                text=f"Eventos registrados en: {nombre_ubicacion}",
+                font=("Arial", 20, "bold")
+            )
+            titulo.pack(pady=15)
+
+            columnas=("ID", "Título", "Inicio", "Fin", "Estado")
+
+            tree=ttk.Treeview(
+                ventana,
+                columns=columnas,
+                show="headings",
+                height=14
+            )
+
+            tree.heading("ID", text="ID")
+            tree.heading("Título", text="Título")
+            tree.heading("Inicio", text="Inicio")
+            tree.heading("Fin", text="Fin")
+            tree.heading("Estado", text="Estado")
+
+            tree.column("ID", width=60, anchor="center")
+            tree.column("Título", width=260)
+            tree.column("Inicio", width=180, anchor="center")
+            tree.column("Fin", width=180, anchor="center")
+            tree.column("Estado", width=100, anchor="center")
+
+            for evento in eventos:
+                tree.insert("", "end", values=evento)
+
+            tree.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+
+        except Exception as e:
+            messagebox.showerror(
+                "Error",
+                f"No se pudieron consultar los eventos:\n{e}"
             )
 
     def cargar_datos_ubicaciones(self):
@@ -2879,10 +2973,10 @@ class AppAgenda(ctk.CTk):
 
     def actualizar_todas_las_tablas(self):
         self.cargar_datos_usuarios()
-        self.cargar_datos_disponibilidades()
         self.cargar_datos_categorias()
-        self.cargar_datos_eventos()
         self.cargar_datos_ubicaciones()
+        self.cargar_datos_eventos()
+        self.cargar_datos_disponibilidades()
         self.cargar_datos_tareas()
         
 if __name__ == "__main__":
